@@ -143,17 +143,10 @@
     "endpoint": "https://www.emsisoft.com/en/help/contact/?c=submit",
     "requires_captcha": true
   },
-  "emsisoft": {
-    "type": "form",
-    "category": ["phishing"],
-    "endpoint": "https://www.emsisoft.com/en/help/contact/?c=submit",
-    "requires_captcha": false 
-  },
   "yandex": {
     "type": "form",
     "category": ["phishing"],
     "endpoint": "https://yandex.com/support/search/en/troubleshooting/delspam.html",
     "requires_captcha": false 
-  },
-
+  }
 }
