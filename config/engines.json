@@ -1,0 +1,159 @@
+{
+    "phishtank": {
+    "type": "api",
+    "category": ["phishing"],
+    "endpoint": "https://checkurl.phishtank.com/checkurl/",
+    "requires_captcha": false
+  },
+    "urlhaus": {
+    "type": "api",
+    "category": ["scam", "phishing"],
+    "endpoint": "https://urlhaus.abuse.ch/api/",
+    "requires_captcha": false
+  },
+    "google_safe_browsing": {
+    "type": "form",
+    "category": ["phishing", "scam"],
+    "url": "https://safebrowsing.google.com/safebrowsing/report_phish/",
+    "requires_captcha": true
+  },
+    "brightcloud": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.brightcloud.com/tools/url-ip-lookup.php",
+    "requires_captcha": true
+  },
+  "bitdefender": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.bitdefender.com/consumer/support/answer/29358/",
+    "requires_captcha": false
+  },
+  "fortiguard": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.fortiguard.com/webfilter",
+    "requires_captcha": true
+  },
+    "kaspersky": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://opentip.kaspersky.com/?tab=lookup",
+    "requires_captcha": false
+  },
+    "alphamountain": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://alphamountain.freshdesk.com/support/tickets/new",
+    "requires_captcha": false
+  },
+    "vipre": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://alphamountain.freshdesk.com/support/tickets/new",
+    "requires_captcha": false
+  },
+  "paloaltonetwork": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://urlfiltering.paloaltonetworks.com/",
+    "requires_captcha": false
+  },
+  "guardianav": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.guardianav.co.in/report-phishing",
+    "requires_captcha": false
+  },
+    "quickheal": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.quickheal.com/report-a-malware/",
+    "requires_captcha": true
+  },
+    "lionic": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.lionic.com/supports/report-malicious-url/?u=",
+    "requires_captcha": false
+  },
+    "gdata": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://submit.gdatasoftware.com/url?key=",
+    "requires_captcha": true
+  },
+    "threatcenter": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://threatcenter.crdf.fr/submit_url.html",
+    "requires_captcha": false 
+  },
+    "antimalware": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://support-antimalware.com/open.php",
+    "requires_captcha": true
+  },   
+  "eset": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://phishing.eset.com/en-us/report",
+    "requires_captcha": true 
+  },
+  "feed": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://feed.seguranca-informatica.pt/",
+    "requires_captcha": false 
+  },
+  "forcepoint": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://support.forcepoint.com/s/site-lookup",
+    "requires_captcha": false 
+  },
+  "sitereview": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://sitereview.symantec.com/#/",
+    "requires_captcha": true 
+  },
+  "trustware": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://support.trustwave.com/submit-a-site.asp",
+    "requires_captcha": true
+  },
+  "bfore": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://bfore.ai/support/",
+    "requires_captcha": false 
+  },
+  "drweb": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://support.drweb.fr/new/urlfilter/",
+    "requires_captcha": true
+  },
+  "emsisoft": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.emsisoft.com/en/help/contact/?c=submit",
+    "requires_captcha": true
+  },
+  "emsisoft": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://www.emsisoft.com/en/help/contact/?c=submit",
+    "requires_captcha": false 
+  },
+  "yandex": {
+    "type": "form",
+    "category": ["phishing"],
+    "endpoint": "https://yandex.com/support/search/en/troubleshooting/delspam.html",
+    "requires_captcha": false 
+  },
+
+}
