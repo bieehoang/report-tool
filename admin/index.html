@@ -176,6 +176,12 @@
   .drawer-actions .btn{ flex:1; text-align:center; }
 
   .footer-note{ margin-top:20px; font-size:11.5px; color:var(--text-dimmer); font-family:var(--mono); }
+  .conn-warn{
+    display:none; margin-bottom:16px; padding:10px 14px; border-radius:8px;
+    background:rgba(241,99,107,.1); border:1px solid rgba(241,99,107,.3);
+    color:#F1A0A5; font-family:var(--mono); font-size:12px;
+  }
+  .conn-warn.show{ display:block; }
 </style>
 </head>
 <body>
@@ -188,6 +194,8 @@
   <div class="clock"><span class="pulse"></span><span id="clockText">—</span></div>
 </div>
 
+<div class="conn-warn" id="connWarn">⚠ Không kết nối được API tại <span id="apiBaseLabel"></span> — đang hiển thị dữ liệu rỗng. Kiểm tra server (npm run dev) có đang chạy không.</div>
+
 <div class="stats" id="statsRow"></div>
 
 <div class="controls">
@@ -195,7 +203,8 @@
   <select id="categoryFilter">
     <option value="">Tất cả loại</option>
     <option value="phishing">Phishing</option>
-    <option value="malware">Malware</option>
+    <option value="scam">Scam</option>
+    <option value="gambling">Gambling</option>
   </select>
   <select id="engineFilter">
     <option value="">Tất cả engine</option>
@@ -233,59 +242,88 @@
 </div>
 
 <script>
-const ENGINES = [
-  { id:'phishtank', name:'PhishTank', type:'api', captcha:false },
-  { id:'urlhaus', name:'URLhaus (abuse.ch)', type:'api', captcha:false },
-  { id:'google_sb', name:'Google Safe Browsing', type:'form', captcha:true },
-  { id:'eset', name:'ESET Threat Report', type:'form', captcha:true },
-  { id:'kaspersky', name:'Kaspersky OpenTIP', type:'form', captcha:true },
-  { id:'vncert', name:'VNCERT', type:'email', captcha:false },
-];
+// ---------------------------------------------------------------------------
+// API_BASE: nơi backend Express (src/index.js) đang lắng nghe.
+// Đổi lại nếu bạn chạy server ở host/port khác.
+// ---------------------------------------------------------------------------
+const API_BASE = 'http://localhost:4000';
 
-const CATEGORIES = ['phishing','scam','gambling'];
-
-function randomPast(mins){
-  return new Date(Date.now() - mins*60000);
-}
-
-function fmtTime(d){
-  return d.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-}
-
-let REPORTS = [
-  mk('hxxp://viet-lotto88[.]xyz/nap-the', 'gambling', 'urlhaus', 'submitted', 340),
-  mk('hxxp://vnpay-support-verify[.]com', 'phishing', 'phishtank', 'submitted', 210),
-  mk('hxxp://shopee-freeship-uudai[.]top', 'scam', 'google_sb', 'needs_captcha', 40),
-  mk('hxxp://mb-bank-secure-login[.]net', 'phishing', 'google_sb', 'needs_captcha', 25),
-  mk('hxxp://casino-vip79[.]club', 'gambling', 'eset', 'needs_captcha', 15),
-  mk('hxxp://tiktok-shop-giftcode[.]site', 'scam', 'urlhaus', 'in_progress', 6),
-  mk('hxxp://fpt-telecom-hoadon[.]info', 'phishing', 'phishtank', 'in_progress', 3),
-  mk('hxxp://w88-khuyenmai-vn[.]bet', 'gambling', 'kaspersky', 'pending', 2),
-  mk('hxxp://agribank-capnhat-cccd[.]com', 'phishing', 'vncert', 'pending', 1),
-  mk('hxxp://binance-airdrop-2026[.]click', 'scam', 'kaspersky', 'failed', 90),
-];
-
-let idCounter = REPORTS.length;
-function mk(url, category, engineId, status, minsAgo){
-  idCounter = (typeof idCounter === 'undefined') ? 0 : idCounter;
-  idCounter++;
-  return {
-    id: idCounter,
-    url, category, engineId, status,
-    updatedAt: randomPast(minsAgo),
-    evidence: 'screenshot_' + idCounter + '.png',
-  };
-}
-
+let ENGINES = {};          // nạp từ GET /api/engines
+let REPORTS = [];          // nạp từ GET /api/reports
 let state = { search:'', category:'', engine:'', selectedId:null, activeStat:null };
+let pollTimer = null;
 
-function engineName(id){ return (ENGINES.find(e=>e.id===id)||{}).name || id; }
-function engineOf(id){ return ENGINES.find(e=>e.id===id); }
+function engineName(id){ return (ENGINES[id] || {}).name || id; }
+function engineOf(id){ return ENGINES[id]; }
 
 function statusLabel(s){
   return { pending:'Chờ xử lý', needs_captcha:'Cần giải CAPTCHA', in_progress:'Đang chạy', submitted:'Đã gửi', failed:'Thất bại' }[s] || s;
 }
 
+function fmtTime(iso){
+  // backend trả updated_at dạng "YYYY-MM-DD HH:MM:SS" (UTC, từ sqlite datetime('now'))
+  const d = new Date(iso.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('vi-VN', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+async function apiGet(path){
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+  return res.json();
+}
+async function apiPost(path, body){
+  const res = await fetch(API_BASE + path, {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `POST ${path} -> ${res.status}`);
+  return data;
+}
+
+function setConnWarning(broken){
+  document.getElementById('apiBaseLabel').textContent = API_BASE;
+  document.getElementById('connWarn').classList.toggle('show', broken);
+}
+
+// ---------------------------------------------------------------------------
+// Load dữ liệu thật từ backend
+// ---------------------------------------------------------------------------
+async function loadAll(){
+  try {
+    const [engines, reports] = await Promise.all([
+      apiGet('/api/engines'),
+      apiGet('/api/reports'),
+    ]);
+    // engines.json là object { engineId: {...} }, cần thêm field 'name' hiển thị đẹp
+    ENGINES = {};
+    Object.entries(engines).forEach(([id, def]) => {
+      ENGINES[id] = { ...def, name: def.name || id };
+    });
+    REPORTS = reports;
+    setConnWarning(false);
+    populateEngineFilter();
+    renderStats();
+    renderTable();
+    if (state.selectedId != null){
+      const stillThere = REPORTS.find(r => r.id === state.selectedId);
+      if (stillThere) openDrawer(state.selectedId, { keepOpen:true });
+    }
+  } catch (err){
+    console.error('loadAll failed', err);
+    setConnWarning(true);
+  }
+}
+
+function startPolling(){
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(loadAll, 3000); // worker chạy nền, poll để UI tự cập nhật
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
 function renderStats(){
   const counts = { total: REPORTS.length };
   ['pending','needs_captcha','in_progress','submitted','failed'].forEach(s=>{
@@ -316,17 +354,20 @@ function renderStats(){
 
 function populateEngineFilter(){
   const sel = document.getElementById('engineFilter');
-  sel.innerHTML = '<option value="">Tất cả engine</option>' + ENGINES.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Tất cả engine</option>' +
+    Object.entries(ENGINES).map(([id, e])=>`<option value="${id}">${e.name}</option>`).join('');
+  sel.value = current;
 }
 
 function filtered(){
   return REPORTS.filter(r=>{
     if (state.activeStat && r.status !== state.activeStat) return false;
     if (state.category && r.category !== state.category) return false;
-    if (state.engine && r.engineId !== state.engine) return false;
+    if (state.engine && r.engine_id !== state.engine) return false;
     if (state.search && !r.url.toLowerCase().includes(state.search.toLowerCase())) return false;
     return true;
-  }).sort((a,b)=> b.updatedAt - a.updatedAt);
+  }).sort((a,b)=> new Date(b.updated_at) - new Date(a.updated_at));
 }
 
 function renderTable(){
@@ -337,9 +378,9 @@ function renderTable(){
     <tr data-id="${r.id}" class="${state.selectedId===r.id?'selected':''}">
       <td class="url">${r.url}</td>
       <td><span class="tag ${r.category}">${r.category}</span></td>
-      <td class="engine">${engineName(r.engineId)}</td>
+      <td class="engine">${engineName(r.engine_id)}</td>
       <td><span class="status ${r.status}"><span class="dot"></span>${statusLabel(r.status)}</span></td>
-      <td class="engine">${fmtTime(r.updatedAt)}</td>
+      <td class="engine">${fmtTime(r.updated_at)}</td>
       <td style="text-align:right">
         ${r.status==='needs_captcha' ? `<button class="btn" data-action="resume" data-id="${r.id}">Đã giải xong →</button>` : ''}
         ${r.status==='failed' ? `<button class="btn" data-action="retry" data-id="${r.id}">Thử lại</button>` : ''}
@@ -356,15 +397,13 @@ function renderTable(){
   tbody.querySelectorAll('button[data-action="resume"]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const id = Number(btn.getAttribute('data-id'));
-      advanceAfterCaptcha(id);
+      resume(Number(btn.getAttribute('data-id')));
     });
   });
   tbody.querySelectorAll('button[data-action="retry"]').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const id = Number(btn.getAttribute('data-id'));
-      retry(id);
+      retry(Number(btn.getAttribute('data-id')));
     });
   });
 
@@ -372,49 +411,50 @@ function renderTable(){
     `Hiển thị ${rows.length}/${REPORTS.length} report · Engine cần CAPTCHA sẽ tự dừng chờ bạn xác nhận trước khi submit.`;
 }
 
-function advanceAfterCaptcha(id){
-  const r = REPORTS.find(x=>x.id===id);
-  if (!r) return;
-  r.status = 'submitted';
-  r.updatedAt = new Date();
-  renderStats(); renderTable();
-  if (state.selectedId === id) openDrawer(id);
-}
-
-function retry(id){
-  const r = REPORTS.find(x=>x.id===id);
-  if (!r) return;
-  const eng = engineOf(r.engineId);
-  r.status = eng.captcha ? 'needs_captcha' : 'in_progress';
-  r.updatedAt = new Date();
-  renderStats(); renderTable();
-  if (state.selectedId === id) openDrawer(id);
-  if (!eng.captcha){
-    setTimeout(()=>{
-      r.status = 'submitted';
-      r.updatedAt = new Date();
-      renderStats(); renderTable();
-      if (state.selectedId === id) openDrawer(id);
-    }, 1400);
+// ---------------------------------------------------------------------------
+// Actions -> gọi API thật thay vì sửa mảng local
+// ---------------------------------------------------------------------------
+async function resume(id){
+  try {
+    await apiPost(`/api/reports/${id}/resume`);
+    await loadAll();
+  } catch (err){
+    alert('Không đánh dấu được: ' + err.message);
   }
 }
 
-function openDrawer(id){
+async function retry(id){
+  try {
+    await apiPost(`/api/reports/${id}/retry`);
+    await loadAll();
+  } catch (err){
+    alert('Không thử lại được: ' + err.message);
+  }
+}
+
+function openDrawer(id, opts = {}){
   state.selectedId = id;
   const r = REPORTS.find(x=>x.id===id);
-  const eng = engineOf(r.engineId);
+  if (!r) return closeDrawer();
+  const eng = engineOf(r.engine_id) || {};
   document.getElementById('drawerUrl').textContent = r.url;
   document.getElementById('drawerBody').innerHTML = `
     <div class="field"><div class="k">Loại</div><div class="v"><span class="tag ${r.category}">${r.category}</span></div></div>
-    <div class="field"><div class="k">Engine đích</div><div class="v">${eng.name} <span style="color:var(--text-dimmer)">(${eng.type === 'api' ? 'gửi qua API' : eng.type === 'email' ? 'gửi qua email' : 'form web'})</span></div></div>
+    <div class="field"><div class="k">Engine đích</div><div class="v">${engineName(r.engine_id)} <span style="color:var(--text-dimmer)">(${eng.type === 'api' ? 'gửi qua API' : eng.type === 'email' ? 'gửi qua email' : 'form web'})</span></div></div>
     <div class="field"><div class="k">Trạng thái</div><div class="v"><span class="status ${r.status}"><span class="dot"></span>${statusLabel(r.status)}</span></div></div>
-    <div class="field"><div class="k">Bằng chứng đính kèm</div><div class="v mono">${r.evidence}</div></div>
-    <div class="field"><div class="k">Cập nhật lúc</div><div class="v mono">${fmtTime(r.updatedAt)}</div></div>
+    <div class="field"><div class="k">Bằng chứng đính kèm</div><div class="v mono">${r.evidence_path || '(chưa có)'}</div></div>
+    ${r.fail_reason ? `<div class="field"><div class="k">Lỗi gần nhất</div><div class="v mono" style="color:var(--red)">${r.fail_reason}</div></div>` : ''}
+    <div class="field"><div class="k">Cập nhật lúc</div><div class="v mono">${fmtTime(r.updated_at)}</div></div>
     ${r.status==='needs_captcha' ? `
       <div class="step-note">
-        Tool đã tự điền sẵn toàn bộ field (URL, mô tả, ảnh chụp bằng chứng) trên form của <b>${eng.name}</b>.
-        Cửa sổ trình duyệt đang mở sẵn — bạn chỉ cần giải CAPTCHA và bấm Submit thật trên trang đó,
-        sau đó quay lại đây bấm "Đã giải xong" để tool ghi nhận và chuyển sang report kế tiếp.
+        ${r.pause_note && r.pause_note.startsWith('Lỗi tự động')
+          ? `⚠️ <b>Tool bị lỗi tự động</b> ở bước này (không phải điểm dừng có kế hoạch): ${r.pause_note}<br><br>
+             Kiểm tra kỹ trong cửa sổ trình duyệt đang mở — nếu bạn CHƯA tự tay điền nốt + bấm submit thật,
+             đừng bấm "Đã giải xong" (nó sẽ đánh dấu report này là đã gửi dù có thể chưa gửi thật).
+             Nên tự hoàn tất tay rồi mới bấm, hoặc đóng cửa sổ và bấm "Thử lại" để tool tự chạy lại từ đầu.`
+          : (r.pause_note || `Tool đang chờ bạn xử lý 1 bước thủ công trên form của <b>${engineName(r.engine_id)}</b> (cửa sổ trình duyệt đang mở sẵn).`)
+        }
+        ${!(r.pause_note && r.pause_note.startsWith('Lỗi tự động')) ? '<br><br>Xong bấm "Đã giải xong" bên dưới — nếu form còn bước thủ công khác, tool sẽ tự dừng lại lần nữa với hướng dẫn mới.' : ''}
       </div>` : ''}
   `;
 
@@ -422,7 +462,7 @@ function openDrawer(id){
   actions.innerHTML = '';
   if (r.status === 'needs_captcha'){
     actions.innerHTML = `<button class="btn primary" id="drawerResume">Đã giải xong, đánh dấu đã gửi</button>`;
-    document.getElementById('drawerResume').addEventListener('click', ()=> advanceAfterCaptcha(r.id));
+    document.getElementById('drawerResume').addEventListener('click', ()=> resume(r.id));
   } else if (r.status === 'failed'){
     actions.innerHTML = `<button class="btn primary" id="drawerRetry">Thử lại report này</button>`;
     document.getElementById('drawerRetry').addEventListener('click', ()=> retry(r.id));
@@ -431,8 +471,10 @@ function openDrawer(id){
     document.getElementById('drawerCloseBtn').addEventListener('click', closeDrawer);
   }
 
-  document.getElementById('overlay').classList.add('open');
-  document.getElementById('drawer').classList.add('open');
+  if (!opts.keepOpen){
+    document.getElementById('overlay').classList.add('open');
+    document.getElementById('drawer').classList.add('open');
+  }
   renderTable();
 }
 
@@ -450,15 +492,27 @@ document.getElementById('searchInput').addEventListener('input', (e)=>{ state.se
 document.getElementById('categoryFilter').addEventListener('change', (e)=>{ state.category = e.target.value; renderTable(); });
 document.getElementById('engineFilter').addEventListener('change', (e)=>{ state.engine = e.target.value; renderTable(); });
 
-document.getElementById('addBtn').addEventListener('click', ()=>{
+document.getElementById('addBtn').addEventListener('click', async ()=>{
   const url = prompt('Nhập URL cần report (vd: hxxp://example[.]com):');
   if (!url) return;
   const category = prompt('Loại (phishing / scam / gambling):', 'phishing');
-  const engineId = ENGINES[Math.floor(Math.random()*ENGINES.length)].id;
-  const eng = engineOf(engineId);
-  const r = mk(url, CATEGORIES.includes(category) ? category : 'phishing', engineId, eng.captcha ? 'needs_captcha' : 'pending', 0);
-  REPORTS.unshift(r);
-  renderStats(); renderTable();
+  const validCategory = ['phishing','scam','gambling'].includes(category) ? category : 'phishing';
+
+  // Chọn engine đầu tiên hỗ trợ đúng category (thay vì random như bản mock cũ)
+  const engineId = Object.entries(ENGINES).find(([id, e]) =>
+    (e.category || []).includes(validCategory)
+  )?.[0];
+  if (!engineId){
+    alert(`Không tìm thấy engine nào hỗ trợ loại '${validCategory}' trong config/engines.json`);
+    return;
+  }
+
+  try {
+    await apiPost('/api/reports', { url, category: validCategory, engineId });
+    await loadAll();
+  } catch (err){
+    alert('Không thêm được report: ' + err.message);
+  }
 });
 
 function tickClock(){
@@ -467,9 +521,8 @@ function tickClock(){
 setInterval(tickClock, 1000);
 tickClock();
 
-populateEngineFilter();
-renderStats();
-renderTable();
+loadAll();
+startPolling();
 </script>
 </body>
 </html>

@@ -1,22 +1,21 @@
 // src/core/queue.js
-// Hàng đợi report, persist bằng SQLite (data/reports.db) thay vì mảng in-memory
-// như bản mock trong admin/index.html. Đây là nguồn sự thật duy nhất (single source
-// of truth) cho cả worker nền lẫn API mà admin UI gọi tới.
+// Hàng đợi report, persist bằng node:sqlite (module SQLite tích hợp sẵn trong
+// Node.js kể từ v22.5, không còn cần flag từ v22.13, ổn định mức "release
+// candidate" trên Node 24) thay vì mảng in-memory như bản mock trong
+// admin/index.html. Dùng module built-in để khỏi phụ thuộc better-sqlite3
+// (native addon, cần compile bằng node-gyp -> hay lỗi thiếu Visual Studio
+// Build Tools trên Windows).
 //
-// State machine của 1 report:
-//   pending -> in_progress -> submitted
-//                          -> needs_captcha -> (người xử lý tay) -> submitted
-//                          -> failed -> (retry) -> in_progress / needs_captcha
-//
-// Cài đặt: npm install better-sqlite3
+// Đây là nguồn sự thật duy nhất (single source of truth) cho cả worker nền
+// lẫn API mà admin UI gọi tới. Không cần `npm install` thêm gì cho phần DB.
 
 const path = require('path');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const logger = require('./logger');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'reports.db');
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+const db = new DatabaseSync(DB_PATH);
+db.exec('PRAGMA journal_mode = WAL');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS reports (
@@ -35,19 +34,24 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 `);
 
-const VALID_STATUSES = ['pending', 'in_progress', 'needs_captcha', 'submitted', 'failed'];
-
-function touch(id) {
-  db.prepare(`UPDATE reports SET updated_at = datetime('now') WHERE id = ?`).run(id);
+// Migration: thêm cột pause_note cho DB đã tạo từ trước khi có field này.
+// ALTER ADD COLUMN lỗi nếu cột đã tồn tại -> bắt lỗi và bỏ qua, không phải bug.
+try {
+  db.exec(`ALTER TABLE reports ADD COLUMN pause_note TEXT`);
+} catch (_) {
+  // cột đã tồn tại từ lần chạy trước, bỏ qua
 }
+
+const VALID_STATUSES = ['pending', 'in_progress', 'needs_captcha', 'submitted', 'failed'];
 
 function add({ url, category, engineId }) {
   const stmt = db.prepare(
     `INSERT INTO reports (url, category, engine_id, status) VALUES (?, ?, ?, 'pending')`
   );
   const info = stmt.run(url, category, engineId);
-  logger.info('report added to queue', { reportId: info.lastInsertRowid, url, engineId });
-  return get(info.lastInsertRowid);
+  const id = info.lastInsertRowid;
+  logger.info('report added to queue', { reportId: id, url, engineId });
+  return get(id);
 }
 
 function get(id) {
@@ -92,6 +96,7 @@ function setStatus(id, status, extra = {}) {
 
   if (extra.evidencePath !== undefined) { fields.push('evidence_path = ?'); params.push(extra.evidencePath); }
   if (extra.failReason !== undefined) { fields.push('fail_reason = ?'); params.push(extra.failReason); }
+  if (extra.pauseNote !== undefined) { fields.push('pause_note = ?'); params.push(extra.pauseNote); }
 
   params.push(id);
   db.prepare(`UPDATE reports SET ${fields.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...params);

@@ -5,17 +5,16 @@
   "description": "Tool tự động report URL phishing/scam/gambling tới các engine, tự dừng chờ người giải CAPTCHA",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "start": "node --env-file=.env src/index.js",
+    "dev": "node --watch --env-file=.env src/index.js",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "playwright": "^1.47.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   }
 }

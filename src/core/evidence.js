@@ -45,15 +45,20 @@ async function capture(report) {
 
   try {
     log.info('navigating to capture evidence', { target });
-    await page.goto(target, { waitUntil: 'networkidle', timeout: 20000 });
-    await page.screenshot({ path: screenshotPath, fullPage: true });
+    // domcontentloaded (không phải networkidle) -> không cần đợi mạng im hẳn,
+    // tránh timeout dài với site có tracking/ads chạy ngầm liên tục.
+    await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    // Chờ thêm chút để giao diện kịp render (không đợi network) rồi chụp luôn.
+    await page.waitForTimeout(1500);
+    // fullPage: false -> chỉ chụp đúng khung hình đầu tiên nhìn thấy, không cuộn hết trang
+    await page.screenshot({ path: screenshotPath, fullPage: false });
     const html = await page.content();
     fs.writeFileSync(htmlPath, html, 'utf-8');
     log.info('evidence captured', { screenshotPath });
   } catch (err) {
     // Site sập / timeout vẫn nên chụp được gì có gì, không throw để không chặn cả report
     log.warn('capture failed, saving whatever loaded', { error: err.message });
-    try { await page.screenshot({ path: screenshotPath, fullPage: true }); } catch (_) { /* trang trắng cũng được */ }
+    try { await page.screenshot({ path: screenshotPath, fullPage: false }); } catch (_) { /* trang trắng cũng được */ }
   } finally {
     await browser.close();
   }

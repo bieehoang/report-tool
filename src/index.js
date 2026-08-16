@@ -33,7 +33,7 @@ async function submitToEngine(report, engineId, engineDef, evidencePaths) {
   }
 
   if (engineDef.type === 'form') {
-    return formEngine.launchAndFill(report, engineId, engineDef, evidencePaths);
+    return formEngine.start(report, engineId, engineDef, evidencePaths);
   }
 
   if (engineDef.type === 'email') {
@@ -74,8 +74,11 @@ async function workerTick() {
     }
 
     if (result.needsCaptcha) {
-      queue.setStatus(report.id, 'needs_captcha', { evidencePath: evidencePaths.screenshotPath });
-      log.info('paused for manual captcha');
+      queue.setStatus(report.id, 'needs_captcha', {
+        evidencePath: evidencePaths.screenshotPath,
+        pauseNote: result.phaseLabel || null,
+      });
+      log.info('paused for manual step', { phase: result.phaseLabel });
     } else if (result.ok) {
       queue.setStatus(report.id, 'submitted', { evidencePath: evidencePaths.screenshotPath });
       log.info('submitted successfully');
@@ -121,21 +124,45 @@ app.post('/api/reports', (req, res) => {
   res.status(201).json(queue.add({ url, category, engineId }));
 });
 
-// Người dùng bấm "Đã giải xong" sau khi tự giải CAPTCHA + submit thật trên form
+// Người dùng bấm "Đã giải xong" sau khi tự xử lý xong 1 bước thủ công (captcha,
+// submit thật...). Với engine dạng form nhiều chặng, đây có thể chỉ là CHẠY TIẾP
+// chặng kế tiếp (vẫn có thể dừng lại lần nữa ở 1 chặng thủ công khác), không
+// nhất thiết đánh dấu 'submitted' ngay.
 app.post('/api/reports/:id/resume', async (req, res) => {
   const id = Number(req.params.id);
+  const report = queue.get(id);
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+  if (report.status !== 'needs_captcha') {
+    return res.status(400).json({ error: `Cannot resume from status ${report.status}` });
+  }
+
   try {
-    const updated = queue.markSubmittedByUser(id);
-    await formEngine.closeSession(id); // đóng browser đang chờ, nếu còn mở
-    res.json(updated);
+    if (formEngine.hasOpenSession(id)) {
+      const result = await formEngine.resume(report);
+      if (!result.ok) {
+        queue.setStatus(id, 'failed', { failReason: result.error });
+      } else if (result.needsCaptcha) {
+        // Còn ít nhất 1 chặng thủ công nữa -> vẫn needs_captcha, cập nhật hướng dẫn mới
+        queue.setStatus(id, 'needs_captcha', { pauseNote: result.phaseLabel || null });
+      } else {
+        queue.setStatus(id, 'submitted', { pauseNote: null });
+      }
+    } else {
+      // Không có browser session mở (vd engine loại API, hoặc server vừa restart
+      // nên mất session cũ) -> giữ hành vi cũ: coi như người dùng tự lo xong rồi
+      queue.setStatus(id, 'submitted', { pauseNote: null });
+    }
+    res.json(queue.get(id));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.post('/api/reports/:id/retry', (req, res) => {
+app.post('/api/reports/:id/retry', async (req, res) => {
+  const id = Number(req.params.id);
   try {
-    res.json(queue.retry(Number(req.params.id)));
+    await formEngine.forceClose(id); // dọn browser cũ đang mở dở (nếu có) trước khi requeue
+    res.json(queue.retry(id));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

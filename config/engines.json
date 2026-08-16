@@ -20,7 +20,7 @@
     "brightcloud": {
     "type": "form",
     "category": ["phishing"],
-    "endpoint": "https://www.brightcloud.com/tools/url-ip-lookup.php",
+    "endpoint": "https://support.threatintel.opentext.com/tools/url-ip-lookup.php",
     "requires_captcha": true
   },
   "bitdefender": {
@@ -50,20 +50,20 @@
     "vipre": {
     "type": "form",
     "category": ["phishing"],
-    "endpoint": "https://alphamountain.freshdesk.com/support/tickets/new",
+    "endpoint": "https://helpdesk.vipre.com/hc/en-us/requests/new?ticket_form_id=12049841584401",
     "requires_captcha": false
   },
   "paloaltonetwork": {
     "type": "form",
     "category": ["phishing"],
     "endpoint": "https://urlfiltering.paloaltonetworks.com/",
-    "requires_captcha": false
+    "requires_captcha": true
   },
   "guardianav": {
     "type": "form",
     "category": ["phishing"],
     "endpoint": "https://www.guardianav.co.in/report-phishing",
-    "requires_captcha": false
+    "requires_captcha": true
   },
     "quickheal": {
     "type": "form",
